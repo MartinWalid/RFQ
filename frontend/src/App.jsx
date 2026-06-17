@@ -5,24 +5,29 @@ import RequestDetails from "./components/DetailedRequest";
 import NewRequest from "./components/NewRequest";
 import OperationsCostingPage from "./components/OperationCostingFields";
 import FinancePricingPage from "./components/FinancePricingPage";
+import ThemeToggle from "./components/ThemeToggle";
 
 function App() {
-  // ── Auth ────────────────────────────────────────────────────
+  // ── Auth ─────────────────────────────────────────────────────
   const [user, setUser] = useState(() => {
     const saved = localStorage.getItem("user");
     return saved ? JSON.parse(saved) : null;
   });
 
-  // ── Navigation state ────────────────────────────────────────
+  // ── Navigation state ──────────────────────────────────────────
   const [selectedRequest, setSelectedRequest] = useState(null);
   const [isCreating, setIsCreating] = useState(false);
   const [salesOrder, setSalesOrder] = useState(null);
   const [showFinance, setShowFinance] = useState(false);
   const [costingData, setCostingData] = useState(null);
 
-  // ── Auth handlers ───────────────────────────────────────────
-  const handleLogin = (userData) => setUser(userData);
+  // ── Track where Ops page was opened from ─────────────────────
+  // 'new'       → opened right after Sales created a request
+  // 'dashboard' → opened from detail view by an Ops user
+  const [costingOrigin, setCostingOrigin] = useState(null);
 
+  // ── Auth handlers ─────────────────────────────────────────────
+  const handleLogin = (userData) => setUser(userData);
   const handleLogout = () => {
     localStorage.removeItem("token");
     localStorage.removeItem("user");
@@ -32,133 +37,175 @@ function App() {
     setSalesOrder(null);
     setShowFinance(false);
     setCostingData(null);
+    setCostingOrigin(null);
   };
 
-  // ── Navigation helpers ──────────────────────────────────────
+  // ── salesOrder mapper ─────────────────────────────────────────
+  //
+  // Handles both shapes that can arrive:
+  //
+  // Shape A — from NewRequest.jsx onSubmit():
+  //   { requestId, clientName, projectTitle, quotationDeadline,
+  //     deliveryDate, clientBudget, attachmentName, items[] }
+  //   items: { id, item_id, quantity, description }
+  //
+  // Shape B — from DB via DetailedRequest onOpenCosting():
+  //   { id, client_name, project_title, quotation_deadline,
+  //     delivery_date, client_budget, items[] }
+  //   items: { id, item_name, item_code, quantity, specifications }
+  //
+  const mapRequestToSalesOrder = (request) => ({
+    // ID — NewRequest uses requestId, DB uses id
+    id: request.id ?? request.requestId ?? null,
 
-  /**
-   * Called by RequestDetails when an Operations user clicks
-   * "Add / Edit Costing" on a pending_ops request.
-   * Maps the DB request shape → the salesOrder shape that
-   * OperationsCostingPage already understands.
-   */
+    // Client name — NewRequest passes camelCase, DB passes snake_case
+    clientName: request.clientName ?? request.client_name ?? "",
+
+    // Project title
+    projectTitle: request.projectTitle ?? request.project_title ?? "",
+
+    // Quotation deadline — format for display if it's a raw date string
+    quotationDeadline: (() => {
+      const raw = request.quotationDeadline ?? request.quotation_deadline ?? null;
+      if (!raw) return "";
+      // If already a human-readable string (from NewRequest), keep it
+      if (isNaN(Date.parse(raw))) return raw;
+      return new Date(raw).toLocaleDateString("en-GB", {
+        day: "numeric", month: "long", year: "numeric",
+      });
+    })(),
+
+    // Delivery date
+    deliveryDate: request.deliveryDate ?? request.delivery_date ?? "",
+
+    // Client budget
+    clientBudget: request.clientBudget ?? request.client_budget ?? null,
+
+    // Attachment
+    attachmentName: request.attachmentName ?? null,
+
+    // Items — normalise to { id, description, quantity }
+    // NewRequest already gives description; DB gives item_name
+    items: (request.items ?? []).map((item) => ({
+      id: item.id,
+      description: item.description ?? item.item_name ?? "",
+      quantity: item.quantity ?? 1,
+      itemCode: item.item_code ?? item.itemCode ?? "",
+      specs: item.specifications ?? item.specs ?? "",
+    })),
+  });
+
+  // ── Navigation: open Ops costing from dashboard detail view ──
   const handleOpenCosting = (request) => {
     setSelectedRequest(null);
     setSalesOrder(mapRequestToSalesOrder(request));
     setShowFinance(false);
     setCostingData(null);
+    setCostingOrigin("dashboard");
   };
 
-  /**
-   * Called by RequestDetails when a Finance user clicks
-   * "Configure Pricing" on a pending_finance request.
-   * FinancePricingPage will load its own data from the API
-   * on mount, so we just need to navigate there.
-   */
+  // ── Navigation: open Finance from dashboard detail view ───────
   const handleOpenFinance = (request) => {
     setSelectedRequest(null);
     setSalesOrder(mapRequestToSalesOrder(request));
     setShowFinance(true);
-    // costingData will be fetched inside FinancePricingPage via GET /api/requests/:id/finance
     setCostingData(null);
+    setCostingOrigin("dashboard");
   };
 
-  /**
-   * Maps the backend request object to the salesOrder shape
-   * that Ops and Finance pages already use internally.
-   * Add/remove fields here if your backend returns different keys.
-   */
-  const mapRequestToSalesOrder = (request) => ({
-    // Keep the original DB id so Ops/Finance can call /api/requests/:id/*
-    id: request.id,
-    clientName: request.client?.name ?? request.clientName ?? "",
-    projectTitle: request.project_title ?? request.projectTitle ?? "",
-    quotationDeadline: request.quotation_deadline ?? request.quotationDeadline ?? "",
-    deliveryDate: request.delivery_date ?? request.deliveryDate ?? "",
-    clientBudget: request.client_budget ?? request.clientBudget ?? null,
-    attachmentName: request.attachmentName ?? null,
-    // items array — backend may return them nested or flat
-    items: request.items ?? [],
-  });
+  // ── Guard ─────────────────────────────────────────────────────
+  if (!user) return (
+    <>
+      <LoginUser onLogin={handleLogin} />
+      <ThemeToggle />
+    </>
+  );
 
-  // ── Guard: show login if not authenticated ──────────────────
-  if (!user) {
-    return <LoginUser onLogin={handleLogin} />;
-  }
-
-  // ── State-machine renderer ──────────────────────────────────
+  // ── State-machine renderer ────────────────────────────────────
   const renderContent = () => {
 
-    // Finance page (must come before Ops check)
+    // ── Finance page ────────────────────────────────────────────
     if (salesOrder && showFinance) {
       return (
         <FinancePricingPage
           salesOrder={salesOrder}
-          costingItems={costingData}       // null when opened from dashboard; page fetches its own data
-          requestId={salesOrder.id}        // ← NEW: used for API calls inside the page
-          onBack={() => setShowFinance(false)}
-          onDone={() => {
-            // After locking pricing, go back to the dashboard and refresh
+          costingItems={costingData}
+          requestId={salesOrder.id}
+          onBack={() => {
             setSalesOrder(null);
             setShowFinance(false);
             setCostingData(null);
+            setCostingOrigin(null);
+          }}
+          onDone={() => {
+            setSalesOrder(null);
+            setShowFinance(false);
+            setCostingData(null);
+            setCostingOrigin(null);
           }}
         />
       );
     }
 
-    // Operations costing page
+    // ── Operations costing page ─────────────────────────────────
     if (salesOrder) {
       return (
         <OperationsCostingPage
           salesOrder={salesOrder}
-          requestId={salesOrder.id}        // ← NEW: used for API calls inside the page
+          requestId={salesOrder.id}
           onBack={() => {
             setSalesOrder(null);
-            // If we came from dashboard detail view, go back there
-            setIsCreating(false);
+            setCostingOrigin(null);
+            // If we came from NewRequest, go back to the create form
+            if (costingOrigin === "new") setIsCreating(true);
           }}
+          // Always wire onSubmitToFinance so Finance page opens with data
           onSubmitToFinance={(data) => {
             setCostingData(data);
             setShowFinance(true);
           }}
-          onDone={() => {
-            // After submitting to finance, go back to dashboard
-            setSalesOrder(null);
-            setShowFinance(false);
-            setCostingData(null);
-          }}
+          // onDone only when opened from dashboard — goes back to dashboard
+          onDone={costingOrigin === "dashboard"
+            ? () => {
+              setSalesOrder(null);
+              setShowFinance(false);
+              setCostingData(null);
+              setCostingOrigin(null);
+            }
+            : undefined
+          }
         />
       );
     }
 
-    // New request form (Sales)
+    // ── New request form ────────────────────────────────────────
     if (isCreating) {
       return (
         <NewRequest
           onBack={() => setIsCreating(false)}
           onSubmit={(order) => {
             setIsCreating(false);
-            setSalesOrder(order);
+            setSalesOrder(mapRequestToSalesOrder(order));
+            setCostingOrigin("new");   // remember we came from NewRequest
           }}
         />
       );
     }
 
-    // Request detail view
+    // ── Request detail view ─────────────────────────────────────
     if (selectedRequest) {
       return (
         <RequestDetails
           requestData={selectedRequest}
-          currentUser={user}                        // ← NEW: role-aware buttons
+          currentUser={user}
           onBack={() => setSelectedRequest(null)}
-          onOpenCosting={handleOpenCosting}         // ← NEW: Ops CTA
-          onOpenFinance={handleOpenFinance}         // ← NEW: Finance CTA
+          onOpenCosting={handleOpenCosting}
+          onOpenFinance={handleOpenFinance}
         />
       );
     }
 
-    // Default: dashboard
+    // ── Default: dashboard ──────────────────────────────────────
     return (
       <RequestDashboard
         currentUser={user}
@@ -169,7 +216,12 @@ function App() {
     );
   };
 
-  return <main>{renderContent()}</main>;
+  return (
+    <main>
+      {renderContent()}
+      <ThemeToggle />
+    </main>
+  );
 }
 
 export default App;

@@ -1,5 +1,8 @@
 @import "tailwindcss";
 
+/* Enable class-based dark mode (Tailwind v4) */
+@custom-variant dark (&:where(.dark, .dark *));
+
 @layer base {
   html, body, #root {
     margin: 0;
@@ -7,10 +10,9 @@
     width: 100%;
     height: 100%;
   }
-/* 
-  body {
-    /* Replace the hex codes with your specific colors 
-    background: linear-gradient(to bottom right, #1e3a8a); 
-    b       ackground-attachment: fixed;
-   */
+
+  /* Smooth transition when toggling dark mode */
+  html {
+    transition: background-color 0.3s ease, color 0.3s ease;
+  }
 }

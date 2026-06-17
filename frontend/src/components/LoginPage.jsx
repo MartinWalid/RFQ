@@ -30,8 +30,8 @@ export default function LoginUser({ onLogin }) {
   };
 
   return (
-    <div className="fixed inset-0 flex justify-center items-center bg-gradient-to-br from-slate-100 via-blue-50 to-slate-100 overflow-y-auto px-4">
-      <div className="bg-white rounded-2xl shadow-lg border border-slate-200 px-8 py-10 w-full max-w-sm">
+    <div className="fixed inset-0 flex justify-center items-center bg-gradient-to-br from-slate-100 via-blue-50 to-slate-100 dark:from-slate-900 dark:via-slate-800 dark:to-slate-900 overflow-y-auto px-4 transition-colors duration-300">
+      <div className="bg-white dark:bg-slate-800 rounded-2xl shadow-lg dark:shadow-black/30 border border-slate-200 dark:border-slate-700 px-8 py-10 w-full max-w-sm transition-colors duration-300">
 
         <div className="flex justify-center mb-6">
           <img
@@ -42,22 +42,22 @@ export default function LoginUser({ onLogin }) {
           />
         </div>
 
-        <h1 className="text-2xl font-semibold text-center text-slate-700 mb-1">
+        <h1 className="text-2xl font-semibold text-center text-slate-700 dark:text-slate-200 mb-1">
           Welcome back
         </h1>
-        <p className="text-sm text-center text-slate-400 mb-7">
+        <p className="text-sm text-center text-slate-400 dark:text-slate-500 mb-7">
           Sign in to your account to continue
         </p>
 
         {error && (
-          <div className="mb-5 bg-red-50 border border-red-200 text-red-600 px-4 py-3 rounded-xl text-sm font-medium">
+          <div className="mb-5 bg-red-50 dark:bg-red-900/30 border border-red-200 dark:border-red-800 text-red-600 dark:text-red-400 px-4 py-3 rounded-xl text-sm font-medium">
             {error}
           </div>
         )}
 
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
-            <label htmlFor="login-email" className="block mb-1.5 text-sm font-semibold text-slate-500 uppercase tracking-wide">
+            <label htmlFor="login-email" className="block mb-1.5 text-sm font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wide">
               Email
             </label>
             <input
@@ -66,12 +66,12 @@ export default function LoginUser({ onLogin }) {
               placeholder="you@company.com"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
-              className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm text-slate-700 placeholder-slate-300 focus:outline-none focus:ring-2 focus:ring-blue-400 focus:border-transparent transition"
+              className="w-full border border-slate-200 dark:border-slate-600 rounded-lg px-3 py-2 text-sm text-slate-700 dark:text-slate-200 bg-white dark:bg-slate-700 placeholder-slate-300 dark:placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-blue-400 focus:border-transparent transition"
             />
           </div>
 
           <div>
-            <label htmlFor="login-password" className="block mb-1.5 text-sm font-semibold text-slate-500 uppercase tracking-wide">
+            <label htmlFor="login-password" className="block mb-1.5 text-sm font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wide">
               Password
             </label>
             <input
@@ -80,14 +80,14 @@ export default function LoginUser({ onLogin }) {
               placeholder="••••••••"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
-              className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm text-slate-700 placeholder-slate-300 focus:outline-none focus:ring-2 focus:ring-blue-400 focus:border-transparent transition"
+              className="w-full border border-slate-200 dark:border-slate-600 rounded-lg px-3 py-2 text-sm text-slate-700 dark:text-slate-200 bg-white dark:bg-slate-700 placeholder-slate-300 dark:placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-blue-400 focus:border-transparent transition"
             />
           </div>
 
           <button
             type="submit"
             disabled={loading}
-            className="w-full flex items-center justify-center gap-2 px-6 py-2.5 rounded-xl text-sm font-bold bg-blue-700 hover:bg-blue-800 active:bg-blue-900 text-white shadow-md shadow-blue-200 transition-all mt-2 disabled:opacity-60 disabled:cursor-not-allowed"
+            className="w-full flex items-center justify-center gap-2 px-6 py-2.5 rounded-xl text-sm font-bold bg-blue-700 hover:bg-blue-800 active:bg-blue-900 dark:bg-blue-600 dark:hover:bg-blue-700 text-white shadow-md shadow-blue-200 dark:shadow-blue-900/30 transition-all mt-2 disabled:opacity-60 disabled:cursor-not-allowed"
           >
             {loading ? "Signing in..." : "Sign In"}
             {!loading && (
