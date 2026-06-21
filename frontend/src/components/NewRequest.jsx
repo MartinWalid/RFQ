@@ -5,6 +5,7 @@ import api from "../api/axios";
 export default function NewRequest({ onBack, onSubmit }) {
   const [budget, setBudget] = useState("");
   const [clientName, setClientName] = useState("");
+  const [contactPerson, setContactPerson] = useState("");
   const [projectTitle, setProjectTitle] = useState("Uniforms");
   const [quotationDeadline, setQuotationDeadline] = useState("");
   const [deliveryDate, setDeliveryDate] = useState("");
@@ -53,6 +54,7 @@ export default function NewRequest({ onBack, onSubmit }) {
     try {
       const response = await api.post('/requests', {
         client_name: clientName,
+        contact_person: contactPerson,
         project_title: projectTitle,
         quotation_deadline: quotationDeadline,
         delivery_date: deliveryDate,
@@ -135,6 +137,19 @@ export default function NewRequest({ onBack, onSubmit }) {
                 placeholder="e.g. ABC Company"
                 value={clientName}
                 onChange={(e) => setClientName(e.target.value)}
+                className="w-full border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-700 dark:text-slate-300 placeholder-slate-300 dark:placeholder-slate-500 bg-white dark:bg-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-400 focus:border-transparent transition"
+              />
+            </div>
+
+            <div>
+              <label className="block mb-1.5 text-sm font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wide">
+                Contact Person
+              </label>
+              <input
+                type="text"
+                placeholder="e.g. John Doe"
+                value={contactPerson}
+                onChange={(e) => setContactPerson(e.target.value)}
                 className="w-full border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-700 dark:text-slate-300 placeholder-slate-300 dark:placeholder-slate-500 bg-white dark:bg-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-400 focus:border-transparent transition"
               />
             </div>

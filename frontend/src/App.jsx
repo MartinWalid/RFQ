@@ -1,4 +1,6 @@
-import { useState } from "react";
+import { useState, useEffect, useMemo } from "react";
+import { Routes, Route, Navigate, useNavigate, useParams } from "react-router-dom";
+import api from "./api/axios";
 import LoginUser from "./components/LoginPage";
 import RequestDashboard from "./components/RequestsDashboard";
 import RequestDetails from "./components/DetailedRequest";
@@ -7,218 +9,234 @@ import OperationsCostingPage from "./components/OperationCostingFields";
 import FinancePricingPage from "./components/FinancePricingPage";
 import ThemeToggle from "./components/ThemeToggle";
 
+// ── salesOrder mapper ─────────────────────────────────────────
+//
+// Normalizes a request (DB snake_case, or the camelCase shape returned by
+// NewRequest) into the single canonical shape the Ops/Finance pages consume.
+//
+const formatDeadline = (raw) => {
+  if (!raw) return "";
+  if (Number.isNaN(Date.parse(raw))) return raw;
+  return new Date(raw).toLocaleDateString("en-GB", {
+    day: "numeric",
+    month: "long",
+    year: "numeric",
+  });
+};
+
+const mapRequestToSalesOrder = (request) => ({
+  id: request.id ?? request.requestId ?? null,
+  clientName: request.clientName ?? request.client_name ?? "",
+  projectTitle: request.projectTitle ?? request.project_title ?? "",
+  quotationDeadline: formatDeadline(request.quotationDeadline ?? request.quotation_deadline),
+  deliveryDate: request.deliveryDate ?? request.delivery_date ?? "",
+  clientBudget: request.clientBudget ?? request.client_budget ?? null,
+  attachmentName: request.attachmentName ?? null,
+  items: (request.items ?? []).map((item) => ({
+    id: item.id,
+    description: item.description ?? item.item_name ?? "",
+    quantity: item.quantity ?? 1,
+    itemCode: item.item_code ?? item.itemCode ?? "",
+    specs: item.specifications ?? item.specs ?? "",
+  })),
+});
+
+// ── Load a request by id and expose it as a salesOrder ────────
+// Used by the Ops/Finance routes so deep links / refreshes work without
+// relying on in-memory navigation state.
+function useSalesOrder(id) {
+  const [salesOrder, setSalesOrder] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+
+  useEffect(() => {
+    let mounted = true;
+
+    if (!id) {
+      setLoading(false);
+      setError("Missing request ID.");
+      return;
+    }
+
+    const load = async () => {
+      setLoading(true);
+      setError(null);
+      try {
+        const { data } = await api.get(`/requests/${id}`);
+        const request = data?.request ?? data?.data ?? data;
+        if (mounted) setSalesOrder(mapRequestToSalesOrder(request));
+      } catch (err) {
+        console.error("Failed to load request:", err);
+        if (mounted) setError("Failed to load request. Please try again.");
+      } finally {
+        if (mounted) setLoading(false);
+      }
+    };
+
+    load();
+
+    return () => {
+      mounted = false;
+    };
+  }, [id]);
+
+  return { salesOrder, loading, error };
+}
+
+const CenteredMessage = ({ children }) => (
+  <div className="min-h-screen bg-gradient-to-br from-slate-100 via-blue-50 to-slate-100 dark:from-slate-900 dark:via-slate-800 dark:to-slate-900 transition-colors duration-300 flex items-center justify-center">
+    <div className="text-slate-400 dark:text-slate-500 text-sm">{children}</div>
+  </div>
+);
+
+// ── Route wrappers ────────────────────────────────────────────
+function RequireAuth({ user, children }) {
+  if (!user) return <Navigate to="/login" replace />;
+  return children;
+}
+
+function DashboardRoute({ user, onLogout }) {
+  const navigate = useNavigate();
+  return (
+    <RequestDashboard
+      currentUser={user}
+      onSelectRequest={(req) => navigate(`/requests/${req.id}`)}
+      onCreateRequest={() => navigate("/requests/new")}
+      onLogout={() => {
+        onLogout();
+        navigate("/login", { replace: true });
+      }}
+    />
+  );
+}
+
+function NewRequestRoute() {
+  const navigate = useNavigate();
+  return (
+    <NewRequest
+      onBack={() => navigate("/")}
+      onSubmit={(order) => navigate(`/requests/${order.requestId ?? order.id}`)}
+    />
+  );
+}
+
+function DetailRoute({ user }) {
+  const { id } = useParams();
+  const navigate = useNavigate();
+  // Memoize so DetailedRequest's [requestData] effect doesn't refetch each render.
+  const requestData = useMemo(() => ({ id }), [id]);
+
+  return (
+    <RequestDetails
+      requestData={requestData}
+      currentUser={user}
+      onBack={() => navigate("/")}
+      onOpenCosting={() => navigate(`/requests/${id}/costing`)}
+      onOpenFinance={() => navigate(`/requests/${id}/finance`)}
+    />
+  );
+}
+
+function CostingRoute() {
+  const { id } = useParams();
+  const navigate = useNavigate();
+  const { salesOrder, loading, error } = useSalesOrder(id);
+
+  if (loading) return <CenteredMessage>Loading costing data…</CenteredMessage>;
+  if (error || !salesOrder) return <CenteredMessage>{error ?? "Request not found."}</CenteredMessage>;
+
+  return (
+    <OperationsCostingPage
+      salesOrder={salesOrder}
+      requestId={id}
+      onBack={() => navigate(`/requests/${id}`)}
+      onDone={() => navigate("/")}
+    />
+  );
+}
+
+function FinanceRoute() {
+  const { id } = useParams();
+  const navigate = useNavigate();
+  const { salesOrder, loading, error } = useSalesOrder(id);
+
+  if (loading) return <CenteredMessage>Loading pricing data…</CenteredMessage>;
+  if (error || !salesOrder) return <CenteredMessage>{error ?? "Request not found."}</CenteredMessage>;
+
+  return (
+    <FinancePricingPage
+      salesOrder={salesOrder}
+      requestId={id}
+      costingItems={null}
+      onBack={() => navigate(`/requests/${id}`)}
+      onDone={() => navigate("/")}
+    />
+  );
+}
+
 function App() {
-  // ── Auth ─────────────────────────────────────────────────────
   const [user, setUser] = useState(() => {
     const saved = localStorage.getItem("user");
     return saved ? JSON.parse(saved) : null;
   });
 
-  // ── Navigation state ──────────────────────────────────────────
-  const [selectedRequest, setSelectedRequest] = useState(null);
-  const [isCreating, setIsCreating] = useState(false);
-  const [salesOrder, setSalesOrder] = useState(null);
-  const [showFinance, setShowFinance] = useState(false);
-  const [costingData, setCostingData] = useState(null);
-
-  // ── Track where Ops page was opened from ─────────────────────
-  // 'new'       → opened right after Sales created a request
-  // 'dashboard' → opened from detail view by an Ops user
-  const [costingOrigin, setCostingOrigin] = useState(null);
-
-  // ── Auth handlers ─────────────────────────────────────────────
   const handleLogin = (userData) => setUser(userData);
+
   const handleLogout = () => {
     localStorage.removeItem("token");
     localStorage.removeItem("user");
     setUser(null);
-    setSelectedRequest(null);
-    setIsCreating(false);
-    setSalesOrder(null);
-    setShowFinance(false);
-    setCostingData(null);
-    setCostingOrigin(null);
-  };
-
-  // ── salesOrder mapper ─────────────────────────────────────────
-  //
-  // Handles both shapes that can arrive:
-  //
-  // Shape A — from NewRequest.jsx onSubmit():
-  //   { requestId, clientName, projectTitle, quotationDeadline,
-  //     deliveryDate, clientBudget, attachmentName, items[] }
-  //   items: { id, item_id, quantity, description }
-  //
-  // Shape B — from DB via DetailedRequest onOpenCosting():
-  //   { id, client_name, project_title, quotation_deadline,
-  //     delivery_date, client_budget, items[] }
-  //   items: { id, item_name, item_code, quantity, specifications }
-  //
-  const mapRequestToSalesOrder = (request) => ({
-    // ID — NewRequest uses requestId, DB uses id
-    id: request.id ?? request.requestId ?? null,
-
-    // Client name — NewRequest passes camelCase, DB passes snake_case
-    clientName: request.clientName ?? request.client_name ?? "",
-
-    // Project title
-    projectTitle: request.projectTitle ?? request.project_title ?? "",
-
-    // Quotation deadline — format for display if it's a raw date string
-    quotationDeadline: (() => {
-      const raw = request.quotationDeadline ?? request.quotation_deadline ?? null;
-      if (!raw) return "";
-      // If already a human-readable string (from NewRequest), keep it
-      if (isNaN(Date.parse(raw))) return raw;
-      return new Date(raw).toLocaleDateString("en-GB", {
-        day: "numeric", month: "long", year: "numeric",
-      });
-    })(),
-
-    // Delivery date
-    deliveryDate: request.deliveryDate ?? request.delivery_date ?? "",
-
-    // Client budget
-    clientBudget: request.clientBudget ?? request.client_budget ?? null,
-
-    // Attachment
-    attachmentName: request.attachmentName ?? null,
-
-    // Items — normalise to { id, description, quantity }
-    // NewRequest already gives description; DB gives item_name
-    items: (request.items ?? []).map((item) => ({
-      id: item.id,
-      description: item.description ?? item.item_name ?? "",
-      quantity: item.quantity ?? 1,
-      itemCode: item.item_code ?? item.itemCode ?? "",
-      specs: item.specifications ?? item.specs ?? "",
-    })),
-  });
-
-  // ── Navigation: open Ops costing from dashboard detail view ──
-  const handleOpenCosting = (request) => {
-    setSelectedRequest(null);
-    setSalesOrder(mapRequestToSalesOrder(request));
-    setShowFinance(false);
-    setCostingData(null);
-    setCostingOrigin("dashboard");
-  };
-
-  // ── Navigation: open Finance from dashboard detail view ───────
-  const handleOpenFinance = (request) => {
-    setSelectedRequest(null);
-    setSalesOrder(mapRequestToSalesOrder(request));
-    setShowFinance(true);
-    setCostingData(null);
-    setCostingOrigin("dashboard");
-  };
-
-  // ── Guard ─────────────────────────────────────────────────────
-  if (!user) return (
-    <>
-      <LoginUser onLogin={handleLogin} />
-      <ThemeToggle />
-    </>
-  );
-
-  // ── State-machine renderer ────────────────────────────────────
-  const renderContent = () => {
-
-    // ── Finance page ────────────────────────────────────────────
-    if (salesOrder && showFinance) {
-      return (
-        <FinancePricingPage
-          salesOrder={salesOrder}
-          costingItems={costingData}
-          requestId={salesOrder.id}
-          onBack={() => {
-            setSalesOrder(null);
-            setShowFinance(false);
-            setCostingData(null);
-            setCostingOrigin(null);
-          }}
-          onDone={() => {
-            setSalesOrder(null);
-            setShowFinance(false);
-            setCostingData(null);
-            setCostingOrigin(null);
-          }}
-        />
-      );
-    }
-
-    // ── Operations costing page ─────────────────────────────────
-    if (salesOrder) {
-      return (
-        <OperationsCostingPage
-          salesOrder={salesOrder}
-          requestId={salesOrder.id}
-          onBack={() => {
-            setSalesOrder(null);
-            setCostingOrigin(null);
-            // If we came from NewRequest, go back to the create form
-            if (costingOrigin === "new") setIsCreating(true);
-          }}
-          // Always wire onSubmitToFinance so Finance page opens with data
-          onSubmitToFinance={(data) => {
-            setCostingData(data);
-            setShowFinance(true);
-          }}
-          // onDone only when opened from dashboard — goes back to dashboard
-          onDone={costingOrigin === "dashboard"
-            ? () => {
-              setSalesOrder(null);
-              setShowFinance(false);
-              setCostingData(null);
-              setCostingOrigin(null);
-            }
-            : undefined
-          }
-        />
-      );
-    }
-
-    // ── New request form ────────────────────────────────────────
-    if (isCreating) {
-      return (
-        <NewRequest
-          onBack={() => setIsCreating(false)}
-          onSubmit={(order) => {
-            setIsCreating(false);
-            setSalesOrder(mapRequestToSalesOrder(order));
-            setCostingOrigin("new");   // remember we came from NewRequest
-          }}
-        />
-      );
-    }
-
-    // ── Request detail view ─────────────────────────────────────
-    if (selectedRequest) {
-      return (
-        <RequestDetails
-          requestData={selectedRequest}
-          currentUser={user}
-          onBack={() => setSelectedRequest(null)}
-          onOpenCosting={handleOpenCosting}
-          onOpenFinance={handleOpenFinance}
-        />
-      );
-    }
-
-    // ── Default: dashboard ──────────────────────────────────────
-    return (
-      <RequestDashboard
-        currentUser={user}
-        onSelectRequest={(req) => setSelectedRequest(req)}
-        onCreateRequest={() => setIsCreating(true)}
-        onLogout={handleLogout}
-      />
-    );
   };
 
   return (
     <main>
-      {renderContent()}
+      <Routes>
+        <Route
+          path="/login"
+          element={user ? <Navigate to="/" replace /> : <LoginUser onLogin={handleLogin} />}
+        />
+        <Route
+          path="/"
+          element={
+            <RequireAuth user={user}>
+              <DashboardRoute user={user} onLogout={handleLogout} />
+            </RequireAuth>
+          }
+        />
+        <Route
+          path="/requests/new"
+          element={
+            <RequireAuth user={user}>
+              <NewRequestRoute />
+            </RequireAuth>
+          }
+        />
+        <Route
+          path="/requests/:id"
+          element={
+            <RequireAuth user={user}>
+              <DetailRoute user={user} />
+            </RequireAuth>
+          }
+        />
+        <Route
+          path="/requests/:id/costing"
+          element={
+            <RequireAuth user={user}>
+              <CostingRoute />
+            </RequireAuth>
+          }
+        />
+        <Route
+          path="/requests/:id/finance"
+          element={
+            <RequireAuth user={user}>
+              <FinanceRoute />
+            </RequireAuth>
+          }
+        />
+        <Route path="*" element={<Navigate to={user ? "/" : "/login"} replace />} />
+      </Routes>
       <ThemeToggle />
     </main>
   );

@@ -147,6 +147,7 @@ const buildFinancePayload = (request) => {
 
 const buildEditForm = (request) => ({
   client_name: request?.client_name ?? request?.clientName ?? "",
+  contact_person: request?.contact_person ?? request?.contactPerson ?? "",
   project_title: request?.project_title ?? request?.projectTitle ?? "",
   client_budget: request?.client_budget ?? request?.clientBudget ?? "",
   payment_terms: request?.payment_terms ?? request?.paymentTerms ?? "",
@@ -281,6 +282,7 @@ export default function RequestDetails({
 
     const payload = {
       client_name: editForm.client_name?.trim() || null,
+      contact_person: editForm.contact_person?.trim() || null,
       project_title: editForm.project_title?.trim() || null,
       client_budget: editForm.client_budget === "" ? null : Number(editForm.client_budget),
       payment_terms: editForm.payment_terms?.trim() || null,
@@ -564,6 +566,18 @@ export default function RequestDetails({
 
               <label className="space-y-1.5">
                 <span className="text-xs font-semibold text-slate-400 dark:text-slate-500 uppercase tracking-wide">
+                  Contact Person
+                </span>
+                <input
+                  type="text"
+                  value={editForm.contact_person}
+                  onChange={(event) => handleEditFieldChange("contact_person", event.target.value)}
+                  className="w-full rounded-lg border border-slate-200 dark:border-slate-700 px-3 py-2 text-sm bg-white dark:bg-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-400"
+                />
+              </label>
+
+              <label className="space-y-1.5">
+                <span className="text-xs font-semibold text-slate-400 dark:text-slate-500 uppercase tracking-wide">
                   Project Title
                 </span>
                 <input
@@ -778,6 +792,15 @@ export default function RequestDetails({
               </p>
               <p className="text-sm text-slate-700 dark:text-slate-300 font-medium">
                 {data.project_title ?? data.projectTitle ?? "—"}
+              </p>
+            </div>
+
+            <div>
+              <p className="text-xs font-semibold text-slate-400 dark:text-slate-500 uppercase tracking-wide mb-1">
+                Contact Person
+              </p>
+              <p className="text-sm text-slate-700 dark:text-slate-300 font-medium">
+                {data.contact_person ?? data.contactPerson ?? "—"}
               </p>
             </div>
 

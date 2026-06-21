@@ -1,6 +1,4 @@
 import { useEffect, useMemo, useState } from "react";
-import jsPDF from "jspdf";
-import autoTable from "jspdf-autotable";
 import api from "../api/axios";
 
 const DEFAULT_MARKUP = 25;
@@ -498,65 +496,39 @@ export default function FinancePricingPage({
     }
   };
 
-  const handleGeneratePdf = () => {
-    const doc = new jsPDF();
+  const handleGeneratePdf = async () => {
+    if (!resolvedRequestId) {
+      setDraftError("Missing request ID. Please open this request from the dashboard again.");
+      return;
+    }
 
-    doc.setFontSize(18);
-    doc.text("Quotation", 14, 20);
+    setDraftError(null);
+    setLoading(true);
 
-    doc.setFontSize(10);
-    doc.text(`Request ID: ${resolvedRequestId ?? "N/A"}`, 14, 30);
-    doc.text(`Client: ${clientName}`, 14, 37);
-    doc.text(`Project: ${projectTitle}`, 14, 44);
+    try {
+      // Persist the current pricing first so the server-rendered quotation
+      // matches exactly what's on screen (the PDF is generated from saved data).
+      await api.post(`/requests/${resolvedRequestId}/finance`, buildPayload(true));
 
-    const rows = [];
-
-    items.forEach((item) => {
-      if ((item.suppliers ?? []).length === 0) {
-        rows.push([
-          item.code ?? item.id,
-          item.description,
-          item.quantity,
-          "No supplier costing",
-          "-",
-          "-",
-          "-",
-          "-",
-        ]);
-        return;
-      }
-
-      item.suppliers.forEach((supplier) => {
-        const markup = toNumber(markups[supplier.id], DEFAULT_MARKUP);
-        const vatPct = getVatPct(supplier.id);
-        const calc = calcSupplier(supplier, item.quantity, markup, vatPct);
-
-        rows.push([
-          item.code ?? item.id,
-          item.description,
-          item.quantity,
-          supplier.supplierName || "Supplier",
-          fmt(calc.COGS),
-          `${markup}%`,
-          `${vatPct}%`,
-          fmt(calc.total),
-        ]);
+      const response = await api.get(`/requests/${resolvedRequestId}/quotation`, {
+        responseType: "blob",
       });
-    });
 
-    autoTable(doc, {
-      startY: 54,
-      head: [["Code", "Item", "Qty", "Supplier", "COGS", "Margin", "VAT", "Total"]],
-      body: rows,
-      styles: { fontSize: 8 },
-      headStyles: { fillColor: [30, 64, 175] },
-    });
-
-    const finalY = doc.lastAutoTable?.finalY ?? 64;
-    doc.setFontSize(12);
-    doc.text(`Grand Total: ${fmt(totals.grandTotal)}`, 14, finalY + 14);
-
-    doc.save(`quotation-${resolvedRequestId ?? "draft"}.pdf`);
+      const blob = new Blob([response.data], { type: "application/pdf" });
+      const url = window.URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = `quotation-${resolvedRequestId}.pdf`;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.URL.revokeObjectURL(url);
+    } catch (err) {
+      console.error("Generate PDF failed:", err);
+      setDraftError("Failed to generate the quotation PDF. Please try again.");
+    } finally {
+      setLoading(false);
+    }
   };
 
   if (loadingData) {
@@ -928,7 +900,7 @@ export default function FinancePricingPage({
             <button
               type="button"
               onClick={handleGeneratePdf}
-              disabled={items.length === 0}
+              disabled={loading || items.length === 0}
               className="flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-semibold border bg-white dark:bg-slate-800 border-slate-300 dark:border-slate-600 text-slate-600 dark:text-slate-400 hover:border-blue-400 dark:hover:border-blue-500 hover:text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-900/30 transition-all disabled:opacity-50"
             >
               Generate Quotation PDF

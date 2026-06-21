@@ -1,16 +1,18 @@
 // ─────────────────────────────────────────────────────────────
 //  RequestsDashboard.jsx
 //
-//  Fix: DB returns flat columns — client_name, assignee_name,
-//  created_by_name, is_overdue, aging_days — not nested objects.
-//  All field references updated to match the actual SQL query.
+//  New in this version:
+//  • Client-side pagination — 10 requests per page
+//  • Page resets to 1 whenever the request list is refreshed
+//  • Pagination controls only render when there's more than
+//    one page worth of data
 //
 //  📁 Replace: frontend/src/components/RequestsDashboard.jsx
 // ─────────────────────────────────────────────────────────────
 
 import { useEffect, useState } from "react";
 import api from "../api/axios";
-import { Mail, Plus, RefreshCw } from "lucide-react";
+import { Mail, Plus, RefreshCw, ChevronLeft, ChevronRight } from "lucide-react";
 
 const STATUS_STYLES = {
   draft: "bg-slate-100  text-slate-600  border-slate-200",
@@ -32,6 +34,8 @@ const STATUS_LABELS = {
   rejected: "Rejected",
 };
 
+const ROWS_PER_PAGE = 10;
+
 export default function RequestsDashboard({
   currentUser,
   onSelectRequest,
@@ -42,10 +46,20 @@ export default function RequestsDashboard({
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
+  // ── Pagination state ──────────────────────────────────────
+  const [currentPage, setCurrentPage] = useState(1);
+
   // ── Derived counts using DB fields ────────────────────────
   const doneCount = requests.filter((r) => r.status === "approved").length;
   const pendingCount = requests.filter((r) => r.status !== "approved").length;
   const overdueCount = requests.filter((r) => r.is_overdue).length;
+
+  // ── Pagination derived values ─────────────────────────────
+  const totalPages = Math.max(1, Math.ceil(requests.length / ROWS_PER_PAGE));
+  const startIndex = (currentPage - 1) * ROWS_PER_PAGE;
+  const paginatedRequests = requests.slice(startIndex, startIndex + ROWS_PER_PAGE);
+  const rangeStart = requests.length === 0 ? 0 : startIndex + 1;
+  const rangeEnd = Math.min(startIndex + ROWS_PER_PAGE, requests.length);
 
   const fetchRequests = async () => {
     setLoading(true);
@@ -53,6 +67,7 @@ export default function RequestsDashboard({
     try {
       const { data } = await api.get("/requests");
       setRequests(data);
+      setCurrentPage(1); // reset to first page on every fresh fetch
     } catch {
       setError("Failed to load requests. Please try again.");
     } finally {
@@ -61,6 +76,37 @@ export default function RequestsDashboard({
   };
 
   useEffect(() => { fetchRequests(); }, []);
+
+  // Clamp currentPage if it's ever out of range (e.g. data shrinks)
+  useEffect(() => {
+    if (currentPage > totalPages) setCurrentPage(totalPages);
+  }, [totalPages, currentPage]);
+
+  const goToPage = (page) => {
+    const clamped = Math.min(Math.max(1, page), totalPages);
+    setCurrentPage(clamped);
+  };
+
+  // Build a compact page-number list with ellipses for long ranges
+  const getPageNumbers = () => {
+    const pages = [];
+    const delta = 1; // pages to show on each side of current
+    const range = [];
+
+    for (let i = 1; i <= totalPages; i++) {
+      if (i === 1 || i === totalPages || (i >= currentPage - delta && i <= currentPage + delta)) {
+        range.push(i);
+      }
+    }
+
+    let prev = null;
+    for (const i of range) {
+      if (prev !== null && i - prev > 1) pages.push("ellipsis-" + i);
+      pages.push(i);
+      prev = i;
+    }
+    return pages;
+  };
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-100 via-blue-50 to-slate-100 dark:from-slate-900 dark:via-slate-800 dark:to-slate-900 py-10 px-4 font-sans transition-colors duration-300">
@@ -163,7 +209,7 @@ export default function RequestsDashboard({
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100 dark:divide-slate-700">
-                  {requests.map((row) => (
+                  {paginatedRequests.map((row) => (
                     <tr
                       key={row.id}
                       onClick={() => onSelectRequest(row)}
@@ -228,8 +274,58 @@ export default function RequestsDashboard({
             )}
           </div>
 
-          <div className="px-6 py-3 bg-slate-50 dark:bg-slate-700/30 border-t border-slate-100 dark:border-slate-700">
-            <p className="text-xs text-slate-400 dark:text-slate-500 italic">Click on any request to view its details.</p>
+          {/* ── Footer / pagination bar ───────────────────────── */}
+          <div className="flex flex-wrap items-center justify-between gap-3 px-6 py-3 bg-slate-50 dark:bg-slate-700/30 border-t border-slate-100 dark:border-slate-700">
+
+            {!loading && !error && requests.length > 0 ? (
+              <p className="text-xs text-slate-400 dark:text-slate-500">
+                Showing <span className="font-semibold text-slate-600 dark:text-slate-300">{rangeStart}–{rangeEnd}</span> of{" "}
+                <span className="font-semibold text-slate-600 dark:text-slate-300">{requests.length}</span> requests
+              </p>
+            ) : (
+              <p className="text-xs text-slate-400 dark:text-slate-500 italic">Click on any request to view its details.</p>
+            )}
+
+            {/* Pagination controls — only show if more than 1 page */}
+            {!loading && !error && totalPages > 1 && (
+              <div className="flex items-center gap-1">
+                <button
+                  onClick={() => goToPage(currentPage - 1)}
+                  disabled={currentPage === 1}
+                  className="flex items-center justify-center w-8 h-8 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-700 text-slate-500 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-600 disabled:opacity-40 disabled:cursor-not-allowed transition-all"
+                  aria-label="Previous page"
+                >
+                  <ChevronLeft size={14} />
+                </button>
+
+                {getPageNumbers().map((p) =>
+                  typeof p === "string" ? (
+                    <span key={p} className="px-1.5 text-xs text-slate-300 dark:text-slate-600 select-none">…</span>
+                  ) : (
+                    <button
+                      key={p}
+                      onClick={() => goToPage(p)}
+                      className={`flex items-center justify-center min-w-[32px] h-8 px-2 rounded-lg text-xs font-semibold transition-all ${
+                        p === currentPage
+                          ? "bg-blue-700 dark:bg-blue-600 text-white shadow-sm"
+                          : "border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-600"
+                      }`}
+                    >
+                      {p}
+                    </button>
+                  )
+                )}
+
+                <button
+                  onClick={() => goToPage(currentPage + 1)}
+                  disabled={currentPage === totalPages}
+                  className="flex items-center justify-center w-8 h-8 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-700 text-slate-500 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-600 disabled:opacity-40 disabled:cursor-not-allowed transition-all"
+                  aria-label="Next page"
+                >
+                  <ChevronRight size={14} />
+                </button>
+              </div>
+            )}
           </div>
         </div>
       </div>

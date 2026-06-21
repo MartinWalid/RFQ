@@ -28,6 +28,11 @@ const financeRoutes = require('./src/routes/financeRoutes');
 app.use('/api/requests', financeRoutes);
 console.log('✅ Finance routes loaded');
 
+console.log('Loading quotation routes...');
+const quotationRoutes = require('./src/routes/quotationRoutes');
+app.use('/api/requests', quotationRoutes);
+console.log('✅ Quotation routes loaded');
+
 app.get('/', (req, res) => {
     res.json({ message: '✅ RFQ Backend is running!' });
 });

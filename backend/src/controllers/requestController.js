@@ -1,6 +1,19 @@
 const { v4: uuidv4 } = require('uuid');
-const { createRequest, createRequestItem, getAllRequests, getRequestById, updateRequestStatus } = require('../models/requestModel');
+const { createRequest, createRequestItem, getAllRequests, getRequestById, updateRequest, updateRequestStatus } = require('../models/requestModel');
 const pool = require('../config/db');
+
+// Statuses where a request is finalized and can no longer be edited or cancelled.
+const TERMINAL_STATUSES = ['approved', 'rejected', 'cancelled'];
+
+const EDITABLE_KEYS = [
+    'client_name',
+    'contact_person',
+    'project_title',
+    'quotation_deadline',
+    'delivery_date',
+    'payment_terms',
+    'client_budget',
+];
 
 const generateReferenceNumber = async () => {
     const result = await pool.query('SELECT COUNT(*) FROM requests');
@@ -9,7 +22,7 @@ const generateReferenceNumber = async () => {
 };
 
 const create = async (req, res) => {
-    const { client_name, project_title, quotation_deadline, delivery_date, payment_terms, client_budget, items } = req.body;
+    const { client_name, contact_person, project_title, quotation_deadline, delivery_date, payment_terms, client_budget, items } = req.body;
 
     try {
         if (!client_name || !project_title || !quotation_deadline || !delivery_date || !items?.length) {
@@ -22,6 +35,7 @@ const create = async (req, res) => {
             reference_number,
             created_by: req.user.id,
             client_name,
+            contact_person: contact_person || null,
             project_title,
             quotation_deadline,
             delivery_date,
@@ -82,6 +96,75 @@ const getDashboardStats = async (req, res) => {
     }
 };
 
+const update = async (req, res) => {
+    const { id } = req.params;
+
+    try {
+        const existing = await getRequestById(id);
+        if (!existing) {
+            return res.status(404).json({ error: 'Request not found.' });
+        }
+
+        // Sales may only edit their own requests; admin may edit any.
+        if (req.user.role !== 'admin' && existing.created_by !== req.user.id) {
+            return res.status(403).json({ error: 'You can only edit your own requests.' });
+        }
+
+        if (TERMINAL_STATUSES.includes(existing.status)) {
+            return res.status(400).json({ error: 'This request is finalized and can no longer be edited.' });
+        }
+
+        const fields = {};
+        for (const key of EDITABLE_KEYS) {
+            if (Object.prototype.hasOwnProperty.call(req.body, key)) {
+                fields[key] = req.body[key];
+            }
+        }
+
+        await updateRequest(id, fields);
+        const request = await getRequestById(id);
+
+        res.json({ message: 'Request updated successfully.', request });
+    } catch (err) {
+        console.error('Update request error:', err);
+        res.status(500).json({ error: 'Server error.' });
+    }
+};
+
+const cancel = async (req, res) => {
+    const { id } = req.params;
+
+    try {
+        const existing = await getRequestById(id);
+        if (!existing) {
+            return res.status(404).json({ error: 'Request not found.' });
+        }
+
+        if (req.user.role !== 'admin' && existing.created_by !== req.user.id) {
+            return res.status(403).json({ error: 'You can only cancel your own requests.' });
+        }
+
+        if (TERMINAL_STATUSES.includes(existing.status)) {
+            return res.status(400).json({ error: 'This request is finalized and can no longer be cancelled.' });
+        }
+
+        await updateRequestStatus({
+            request_id: id,
+            status: 'cancelled',
+            changed_by: req.user.id,
+            comment: req.body?.comment || 'Request cancelled by requester.',
+            current_assignee: null,
+        });
+
+        const request = await getRequestById(id);
+
+        res.json({ message: 'Request cancelled successfully.', request });
+    } catch (err) {
+        console.error('Cancel request error:', err);
+        res.status(500).json({ error: 'Server error.' });
+    }
+};
+
 const changeStatus = async (req, res) => {
     const { status, comment, current_assignee } = req.body;
     try {
@@ -99,4 +182,4 @@ const changeStatus = async (req, res) => {
     }
 };
 
-module.exports = { create, getAll, getOne, getDashboardStats, changeStatus };
+module.exports = { create, getAll, getOne, getDashboardStats, update, cancel, changeStatus };

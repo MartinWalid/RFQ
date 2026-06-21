@@ -26,6 +26,7 @@ const createTables = async () => {
         reference_number VARCHAR(50) UNIQUE NOT NULL,
         created_by UUID REFERENCES users(id),
         client_name VARCHAR(255) NOT NULL,
+        contact_person VARCHAR(255),
         project_title VARCHAR(255) NOT NULL,
         quotation_deadline TIMESTAMP,
         delivery_date TIMESTAMP,
@@ -33,12 +34,14 @@ const createTables = async () => {
         client_budget DECIMAL(12,2),
         status VARCHAR(50) DEFAULT 'pending_ops' CHECK (
           status IN (
+            'draft',
             'pending_ops',
             'pending_finance',
+            'pending_approval',
             'approved',
             'revision',
             'rejected',
-            'draft'
+            'cancelled'
           )
         ),
         current_assignee UUID REFERENCES users(id),
